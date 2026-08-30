@@ -218,8 +218,57 @@
     document.getElementById('view-user').classList.add('hidden');
     document.getElementById('view-admin').classList.remove('hidden');
 
-    loadAdminTable();
+
+function loadAdminTable() {
+    const tbody = document.getElementById('admin-table-body');
+
+    // روش ۱: دریافت استاندارد از طریق REST API فایربیس (تضمین کارکرد در تمام شبکه‌ها)
+    fetch("https://kntu-approval-system-default-rtdb.firebaseio.com/users.json")
+      .then(res => res.json())
+      .then(users => {
+        renderTableRows(users || {});
+      })
+      .catch(err => {
+        console.error("خطا در واکشی مستقیم:", err);
+      });
+
+    // روش ۲: دریافت زنده تغییرات
+    db.ref('users').on('value', snapshot => {
+      const users = snapshot.val() || {};
+      renderTableRows(users);
+    });
   }
+
+  function renderTableRows(users) {
+    const tbody = document.getElementById('admin-table-body');
+    tbody.innerHTML = '';
+
+    const keys = Object.keys(users);
+    if (keys.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">هیچ کاربری تعریف نشده است.</td></tr>';
+      return;
+    }
+
+    keys.forEach(key => {
+      const val = users[key];
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${val.fullName || '-'}</td>
+        <td style="font-family:monospace; direction:ltr;">${key}</td>
+        <td>
+          <span class="status-badge ${val.approved ? 'status-approved' : 'status-pending'}">
+            ${val.approved ? 'تایید شده' : 'در انتظار تایید'}
+          </span>
+        </td>
+        <td>${val.approvalDate || '-'}</td>
+        <td>
+          <button type="button" class="btn-danger" style="padding: 4px 8px; font-size: 11px;" onclick="deleteUser('${key}')">حذف</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
 
   function addUser() {
     const name = document.getElementById('new-name').value.trim();
