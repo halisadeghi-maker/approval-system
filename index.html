@@ -122,12 +122,12 @@
 </div>
 
 <script>
-  // ۱. تنظیمات اتصال سوپابیس (اطلاعات پروژه خود را اینجا قرار دهید)
-  const SUPABASE_URL = "https://YOUR_PROJECT_ID.supabase.co";
-  const SUPABASE_ANON_KEY = "YOUR_ANON_KEY";
+  // تنظیمات اتصال تصحیح شده Supabase
+  const SUPABASE_URL = "https://yzpuzzzpdldgmmlzetvq.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_ZaicEd-rDmvuOMw3QpV7WA_aIh2Y9JE";
 
   const { createClient } = supabase;
-  const db = createClient(https://yzpuzzzpdldgmmlzetvq.supabase.co/rest/v1/, sb_publishable_ZaicEd-rDmvuOMw3QpV7WA_aIh2Y9JE);
+  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   let currentUser = null;
 
@@ -186,7 +186,6 @@
 
     document.getElementById('user-display-name').innerText = currentUser.full_name || currentUser.username;
     
-    // دریافت تازه‌ترین وضعیت تایید کاربر
     const { data } = await db.from('users').select('*').eq('username', currentUser.username).single();
     if (data) currentUser = data;
 
