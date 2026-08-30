@@ -55,9 +55,9 @@
     </div>
     <div class="form-group">
       <label>رمز عبور:</label>
-      <input type="password" id="login-password" placeholder="کلمه عبور">
+      <input type="password" id="login-password" placeholder="کلمه عبور" onkeypress="if(event.key==='Enter') handleLogin()">
     </div>
-    <button onclick="handleLogin()">ورود</button>
+    <button type="button" onclick="handleLogin()">ورود</button>
   </div>
 
   <!-- پنل کاربر عادی -->
@@ -115,15 +115,16 @@
 </div>
 
 <script>
-  // ۱. تنظیمات فایربیس خود را در اینجا جایگزین کنید:
-   apiKey: "AIzaSyDtNPMvukuLornNSxHXhjV_hduqB4CvxUg",
-  authDomain: "kntu-approval-system.firebaseapp.com",
-  databaseURL: "https://kntu-approval-system-default-rtdb.firebaseio.com",
-  projectId: "kntu-approval-system",
-  storageBucket: "kntu-approval-system.firebasestorage.app",
-  messagingSenderId: "267537800388",
-  appId: "1:267537800388:web:ff2c9847266e50d1787d91",
-  measurementId: "G-58B1GDTDBL"
+  // تنظیمات تصحیح شده فایربیس
+  const firebaseConfig = {
+    apiKey: "AIzaSyDtNPMvukuLornNSxHXhjV_hduqB4CvxUg",
+    authDomain: "kntu-approval-system.firebaseapp.com",
+    databaseURL: "https://kntu-approval-system-default-rtdb.firebaseio.com",
+    projectId: "kntu-approval-system",
+    storageBucket: "kntu-approval-system.firebasestorage.app",
+    messagingSenderId: "267537800388",
+    appId: "1:267537800388:web:ff2c9847266e50d1787d91",
+    measurementId: "G-58B1GDTDBL"
   };
 
   firebase.initializeApp(firebaseConfig);
@@ -131,7 +132,7 @@
 
   let currentUser = null;
 
-  // بررسی احراز هویت
+  // احراز هویت
   function handleLogin() {
     const u = document.getElementById('login-username').value.trim();
     const p = document.getElementById('login-password').value.trim();
@@ -141,14 +142,14 @@
       return;
     }
 
-    // بررسی اکانت ادمین
+    // اکانت ادمین
     if (u === 'admin' && p === 'admin123') {
       currentUser = { username: 'admin', role: 'admin' };
       showAdminView();
       return;
     }
 
-    // بررسی کاربران عادی از دیتابیس
+    // کاربران عادی
     db.ref('users/' + u).once('value', snapshot => {
       const data = snapshot.val();
       if (data && data.password === p) {
@@ -157,6 +158,8 @@
       } else {
         alert('نام کاربری یا رمز عبور نامعتبر است.');
       }
+    }).catch(error => {
+      alert('خطا در برقراری ارتباط با پایگاه داده: ' + error.message);
     });
   }
 
@@ -167,7 +170,6 @@
 
     document.getElementById('user-display-name').innerText = currentUser.fullName || currentUser.username;
     
-    // دریافت وضعیت فعلی تایید
     db.ref('users/' + currentUser.username).on('value', snapshot => {
       const data = snapshot.val();
       if (data && data.approved) {
@@ -193,6 +195,8 @@
       approvalDate: timestamp
     }).then(() => {
       alert('تاییدیه شما با موفقیت ثبت گردید.');
+    }).catch(error => {
+      alert('خطا در ثبت تاییدیه: ' + error.message);
     });
   }
 
@@ -224,12 +228,16 @@
       document.getElementById('new-username').value = '';
       document.getElementById('new-password').value = '';
       alert('کاربر با موفقیت اضافه شد.');
+    }).catch(error => {
+      alert('خطا در افزودن کاربر: ' + error.message);
     });
   }
 
   function deleteUser(username) {
     if (confirm(`آیا از حذف کاربر ${username} اطمینان دارید؟`)) {
-      db.ref('users/' + username).remove();
+      db.ref('users/' + username).remove().catch(error => {
+        alert('خطا در حذف کاربر: ' + error.message);
+      });
     }
   }
 
