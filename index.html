@@ -20,7 +20,7 @@
     .form-group { margin-bottom: 15px; }
     label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 13px; }
     input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
-    button { background-color: var(--primary); color: white; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; }
+    button { background-color: var(--primary); color: white; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; transition: 0.2s; }
     button:hover { background-color: #1d4ed8; }
     .btn-secondary { background-color: #64748b; }
     .btn-danger { background-color: #dc2626; }
@@ -36,6 +36,9 @@
     .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
     .badge { font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: bold; }
   </style>
+
+  <!-- Supabase CDN Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -87,7 +90,7 @@
 
     <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
       <h3 style="margin: 0; font-size: 14px;">تعریف کاربر جدید</h3>
-      <span id="sync-status" class="badge" style="background: #e2e8f0; color: #475569;">در حال اتصال...</span>
+      <span id="sync-status" class="badge" style="background: #dcfce7; color: #15803d;">● پایگاه داده فعال (Supabase)</span>
     </div>
 
     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;">
@@ -110,7 +113,7 @@
           </tr>
         </thead>
         <tbody id="admin-table-body">
-          <tr><td colspan="5" style="color:#64748b;">در حال فراخوانی داده‌ها از سرور...</td></tr>
+          <tr><td colspan="5" style="color:#64748b;">در حال فراخوانی داده‌ها...</td></tr>
         </tbody>
       </table>
     </div>
@@ -119,22 +122,16 @@
 </div>
 
 <script>
-  const DB_URL = "https://kntu-approval-system-default-rtdb.firebaseio.com/users";
+  // ۱. تنظیمات اتصال سوپابیس (اطلاعات پروژه خود را اینجا قرار دهید)
+  const SUPABASE_URL = "https://YOUR_PROJECT_ID.supabase.co";
+  const SUPABASE_ANON_KEY = "YOUR_ANON_KEY";
+
+  const { createClient } = supabase;
+  const db = createClient(https://yzpuzzzpdldgmmlzetvq.supabase.co/rest/v1/, sb_publishable_ZaicEd-rDmvuOMw3QpV7WA_aIh2Y9JE);
+
   let currentUser = null;
 
-  async function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 8000 } = options;
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    const response = await fetch(resource, {
-      ...options,
-      signal: controller.signal
-    });
-    clearTimeout(id);
-    return response;
-  }
-
-  function handleLogin() {
+  async function handleLogin() {
     const u = document.getElementById('login-username').value.trim();
     const p = document.getElementById('login-password').value.trim();
 
@@ -143,7 +140,7 @@
       return;
     }
 
-    // ورود قطعی ادمین
+    // ورود ادمین
     if (u === 'admin' && p === 'admin123') {
       currentUser = { username: 'admin', role: 'admin' };
       showAdminView();
@@ -154,54 +151,64 @@
     btn.disabled = true;
     btn.innerText = 'در حال بررسی...';
 
-    fetchWithTimeout(`${DB_URL}/${encodeURIComponent(u)}.json`)
-      .then(res => res.json())
-      .then(data => {
-        btn.disabled = false;
-        btn.innerText = 'ورود';
-        if (data && data.password === p) {
-          currentUser = { username: u, ...data };
-          showUserView();
-        } else {
-          alert('نام کاربری یا رمز عبور اشتباه است.');
-        }
-      })
-      .catch(err => {
-        btn.disabled = false;
-        btn.innerText = 'ورود';
-        alert('خطا در برقراری ارتباط با پایگاه داده. لطفاً وضعیت اینترنت گوشی یا VPN را بررسی کنید.');
-      });
+    try {
+      const { data, error } = await db
+        .from('users')
+        .select('*')
+        .eq('username', u)
+        .single();
+
+      btn.disabled = false;
+      btn.innerText = 'ورود';
+
+      if (error || !data) {
+        alert('کاربری با این مشخصات یافت نشد.');
+        return;
+      }
+
+      if (data.password === p) {
+        currentUser = data;
+        showUserView();
+      } else {
+        alert('رمز عبور وارد شده نادرست است.');
+      }
+    } catch (err) {
+      btn.disabled = false;
+      btn.innerText = 'ورود';
+      alert('خطا در برقراری ارتباط: ' + err.message);
+    }
   }
 
-  function showUserView() {
+  async function showUserView() {
     document.getElementById('view-login').classList.add('hidden');
     document.getElementById('view-admin').classList.add('hidden');
     document.getElementById('view-user').classList.remove('hidden');
 
-    document.getElementById('user-display-name').innerText = currentUser.fullName || currentUser.username;
+    document.getElementById('user-display-name').innerText = currentUser.full_name || currentUser.username;
     
-    fetchWithTimeout(`${DB_URL}/${encodeURIComponent(currentUser.username)}.json`)
-      .then(res => res.json())
-      .then(data => {
-        const checkbox = document.getElementById('user-approval-checkbox');
-        const btn = document.getElementById('btn-submit-approval');
-        if (data && data.approved) {
-          checkbox.checked = true;
-          checkbox.disabled = true;
-          btn.disabled = true;
-          btn.innerText = 'تاییدیه قبلاً ثبت شده است';
-          btn.style.backgroundColor = '#64748b';
-        } else {
-          checkbox.checked = false;
-          checkbox.disabled = false;
-          btn.disabled = false;
-          btn.innerText = 'ثبت نهایی تاییدیه';
-          btn.style.backgroundColor = 'var(--primary)';
-        }
-      });
+    // دریافت تازه‌ترین وضعیت تایید کاربر
+    const { data } = await db.from('users').select('*').eq('username', currentUser.username).single();
+    if (data) currentUser = data;
+
+    const checkbox = document.getElementById('user-approval-checkbox');
+    const btn = document.getElementById('btn-submit-approval');
+    
+    if (currentUser.approved) {
+      checkbox.checked = true;
+      checkbox.disabled = true;
+      btn.disabled = true;
+      btn.innerText = 'تاییدیه قبلاً ثبت شده است';
+      btn.style.backgroundColor = '#64748b';
+    } else {
+      checkbox.checked = false;
+      checkbox.disabled = false;
+      btn.disabled = false;
+      btn.innerText = 'ثبت نهایی تاییدیه';
+      btn.style.backgroundColor = 'var(--primary)';
+    }
   }
 
-  function saveUserApproval() {
+  async function saveUserApproval() {
     const isChecked = document.getElementById('user-approval-checkbox').checked;
     if (!isChecked) {
       alert('لطفاً گزینه تایید را علامت بزنید.');
@@ -209,21 +216,19 @@
     }
 
     const timestamp = new Date().toLocaleString('fa-IR');
-    const updateData = { approved: true, approvalDate: timestamp };
+    
+    const { error } = await db
+      .from('users')
+      .update({ approved: true, approval_date: timestamp })
+      .eq('username', currentUser.username);
 
-    fetchWithTimeout(`${DB_URL}/${encodeURIComponent(currentUser.username)}.json`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updateData)
-    })
-    .then(res => res.json())
-    .then(() => {
-      alert('تاییدیه شما با موفقیت ثبت گردید.');
-      showUserView();
-    })
-    .catch(error => {
+    if (error) {
       alert('خطا در ثبت تاییدیه: ' + error.message);
-    });
+    } else {
+      alert('تاییدیه شما با موفقیت ثبت گردید.');
+      currentUser.approved = true;
+      showUserView();
+    }
   }
 
   function showAdminView() {
@@ -234,7 +239,7 @@
     loadAdminTable();
   }
 
-  function addUser() {
+  async function addUser() {
     const name = document.getElementById('new-name').value.trim();
     const u = document.getElementById('new-username').value.trim();
     const p = document.getElementById('new-password').value.trim();
@@ -244,91 +249,68 @@
       return;
     }
 
-    const userData = {
-      fullName: name,
-      password: p,
-      approved: false,
-      approvalDate: '-'
-    };
+    const { error } = await db.from('users').insert([
+      {
+        username: u,
+        full_name: name,
+        password: p,
+        approved: false,
+        approval_date: '-'
+      }
+    ]);
 
-    fetchWithTimeout(`${DB_URL}/${encodeURIComponent(u)}.json`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(userData)
-    })
-    .then(res => res.json())
-    .then(() => {
+    if (error) {
+      alert('خطا در افزودن کاربر (احتمالاً نام کاربری تکراری است): ' + error.message);
+    } else {
       document.getElementById('new-name').value = '';
       document.getElementById('new-username').value = '';
       document.getElementById('new-password').value = '';
       alert('کاربر جدید با موفقیت اضافه شد.');
       loadAdminTable();
-    })
-    .catch(err => {
-      alert('خطا در ذخیره‌سازی کاربر: ' + err.message);
-    });
-  }
-
-  function deleteUser(username) {
-    if (confirm(`آیا از حذف کاربر ${username} اطمینان دارید؟`)) {
-      fetchWithTimeout(`${DB_URL}/${encodeURIComponent(username)}.json`, { method: 'DELETE' })
-        .then(() => {
-          alert(`کاربر ${username} حذف شد.`);
-          loadAdminTable();
-        })
-        .catch(err => alert('خطا در حذف: ' + err.message));
     }
   }
 
-  function loadAdminTable() {
-    const tbody = document.getElementById('admin-table-body');
-    const syncStatus = document.getElementById('sync-status');
-    
-    tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">در حال دریافت اطلاعات...</td></tr>';
-    syncStatus.style.background = '#fef08a';
-    syncStatus.style.color = '#854d0e';
-    syncStatus.innerText = 'در حال همگام‌سازی...';
-
-    fetchWithTimeout(`${DB_URL}.json`)
-      .then(res => res.json())
-      .then(users => {
-        syncStatus.style.background = '#dcfce7';
-        syncStatus.style.color = '#15803d';
-        syncStatus.innerText = '● متصل به سرور ابری';
-        renderTableRows(users || {});
-      })
-      .catch(err => {
-        syncStatus.style.background = '#fee2e2';
-        syncStatus.style.color = '#b91c1c';
-        syncStatus.innerText = '✕ عدم دسترسی به سرور';
-        tbody.innerHTML = '<tr><td colspan="5" style="color:#dc2626;">خطا در دریافت اطلاعات. لطفا فیلترشکن/اینترنت گوشی را بررسی کرده و مجدد دکمه بازخوانی را بزنید.</td></tr>';
-      });
+  async function deleteUser(username) {
+    if (confirm(`آیا از حذف کاربر ${username} اطمینان دارید؟`)) {
+      const { error } = await db.from('users').delete().eq('username', username);
+      if (error) {
+        alert('خطا در حذف کاربر: ' + error.message);
+      } else {
+        loadAdminTable();
+      }
+    }
   }
 
-  function renderTableRows(users) {
+  async function loadAdminTable() {
     const tbody = document.getElementById('admin-table-body');
-    tbody.innerHTML = '';
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">در حال دریافت اطلاعات...</td></tr>';
 
-    const keys = Object.keys(users);
-    if (keys.length === 0) {
+    const { data: users, error } = await db.from('users').select('*').order('username', { ascending: true });
+
+    if (error) {
+      tbody.innerHTML = `<tr><td colspan="5" style="color:#dc2626;">خطا در دریافت: ${error.message}</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = '';
+    if (!users || users.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">هیچ کاربری در سامانه تعریف نشده است.</td></tr>';
       return;
     }
 
-    keys.forEach(key => {
-      const val = users[key];
+    users.forEach(val => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${val.fullName || '-'}</td>
-        <td style="font-family:monospace; direction:ltr;">${key}</td>
+        <td>${val.full_name || '-'}</td>
+        <td style="font-family:monospace; direction:ltr;">${val.username}</td>
         <td>
           <span class="status-badge ${val.approved ? 'status-approved' : 'status-pending'}">
             ${val.approved ? 'تایید شده' : 'در انتظار تایید'}
           </span>
         </td>
-        <td>${val.approvalDate || '-'}</td>
+        <td>${val.approval_date || '-'}</td>
         <td>
-          <button type="button" class="btn-danger" style="padding: 3px 6px; font-size: 11px;" onclick="deleteUser('${key}')">حذف</button>
+          <button type="button" class="btn-danger" style="padding: 3px 6px; font-size: 11px;" onclick="deleteUser('${val.username}')">حذف</button>
         </td>
       `;
       tbody.appendChild(tr);
