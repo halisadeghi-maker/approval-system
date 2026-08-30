@@ -20,13 +20,13 @@
     .form-group { margin-bottom: 15px; }
     label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
     input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
-    button { background-color: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; }
+    button { background-color: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; transition: all 0.2s; }
     button:hover { background-color: #1d4ed8; }
     .btn-secondary { background-color: #64748b; margin-right: 10px; }
     .btn-secondary:hover { background-color: #475569; }
     .btn-danger { background-color: #dc2626; }
     .btn-danger:hover { background-color: #b91c1c; }
-    .hidden { display: none; }
+    .hidden { display: none !important; }
     .statement-box { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid var(--primary); margin: 20px 0; line-height: 1.6; }
     .checkbox-container { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
     table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
@@ -36,7 +36,7 @@
     .status-approved { background-color: #dcfce7; color: #15803d; }
     .status-pending { background-color: #fee2e2; color: #b91c1c; }
     .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
-    .info-bar { font-size: 12px; color: #64748b; margin-top: 10px; text-align: left; }
+    .network-badge { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: #e0f2fe; color: #0369a1; font-weight: bold; }
   </style>
   
   <!-- Firebase SDKs -->
@@ -49,7 +49,11 @@
 
   <!-- صفحه لاگین -->
   <div id="view-login">
-    <h2>ورود به سامانه</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+      <h2 style="margin: 0;">ورود به سامانه</h2>
+      <span id="conn-status" class="network-badge">اتصال ابری آماده</span>
+    </div>
+    
     <div class="form-group">
       <label>نام کاربری:</label>
       <input type="text" id="login-username" placeholder="کد پرسنلی / نام کاربری">
@@ -58,7 +62,7 @@
       <label>رمز عبور:</label>
       <input type="password" id="login-password" placeholder="کلمه عبور" onkeypress="if(event.key==='Enter') handleLogin()">
     </div>
-    <button type="button" onclick="handleLogin()">ورود</button>
+    <button type="button" id="btn-login" onclick="handleLogin()">ورود</button>
   </div>
 
   <!-- پنل کاربر عادی -->
@@ -85,7 +89,10 @@
   <div id="view-admin" class="hidden">
     <div class="navbar">
       <span>پنل مدیریت سیستم</span>
-      <button class="btn-secondary" onclick="logout()">خروج</button>
+      <div>
+        <button class="btn-secondary" style="background-color: #0284c7;" onclick="loadAdminTable()">بروزرسانی جدول ⟳</button>
+        <button class="btn-secondary" onclick="logout()">خروج</button>
+      </div>
     </div>
 
     <h3>تعریف / افزودن کاربر جدید</h3>
@@ -108,7 +115,7 @@
         </tr>
       </thead>
       <tbody id="admin-table-body">
-        <!-- سطرهای جدول -->
+        <tr><td colspan="5" style="color:#64748b;">در حال دریافت اطلاعات از سرور...</td></tr>
       </tbody>
     </table>
   </div>
@@ -128,12 +135,18 @@
     measurementId: "G-58B1GDTDBL"
   };
 
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.database();
+  let db = null;
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+  } catch (e) {
+    console.warn("خطا در بارگذاری اولیه فایربیس SDK:", e);
+  }
 
+  const REST_BASE_URL = "https://kntu-approval-system-default-rtdb.firebaseio.com/users";
   let currentUser = null;
 
-  // تابع ورود
+  // تابع لاگین کاملاً مستقل و تضمین‌شده
   function handleLogin() {
     const u = document.getElementById('login-username').value.trim();
     const p = document.getElementById('login-password').value.trim();
@@ -143,17 +156,23 @@
       return;
     }
 
-    // بررسی ادمین
+    // ۱. بررسی ادمین (مستقل از شبکه)
     if (u === 'admin' && p === 'admin123') {
       currentUser = { username: 'admin', role: 'admin' };
       showAdminView();
       return;
     }
 
-    // استعلام مستقیم از پایگاه داده فایربیس
-    db.ref('users/' + u).once('value')
-      .then(snapshot => {
-        const data = snapshot.val();
+    // ۲. بررسی کاربران عادی از طریق REST API مستقیم
+    const btn = document.getElementById('btn-login');
+    btn.disabled = true;
+    btn.innerText = 'در حال بررسی...';
+
+    fetch(`${REST_BASE_URL}/${u}.json`)
+      .then(res => res.json())
+      .then(data => {
+        btn.disabled = false;
+        btn.innerText = 'ورود';
         if (data && data.password === p) {
           currentUser = { username: u, ...data };
           showUserView();
@@ -161,8 +180,23 @@
           alert('نام کاربری یا رمز عبور اشتباه است.');
         }
       })
-      .catch(error => {
-        alert('خطا در احراز هویت: ' + error.message);
+      .catch(err => {
+        btn.disabled = false;
+        btn.innerText = 'ورود';
+        // در صورت خطای Fetch، تلاش با SDK فایربیس
+        if (db) {
+          db.ref('users/' + u).once('value', snapshot => {
+            const data = snapshot.val();
+            if (data && data.password === p) {
+              currentUser = { username: u, ...data };
+              showUserView();
+            } else {
+              alert('نام کاربری یا رمز عبور اشتباه است.');
+            }
+          }).catch(e => alert('خطا در اتصال به سرور: ' + e.message));
+        } else {
+          alert('خطا در اتصال به پایگاه داده: ' + err.message);
+        }
       });
   }
 
@@ -173,26 +207,26 @@
 
     document.getElementById('user-display-name').innerText = currentUser.fullName || currentUser.username;
     
-    // اشتراک زنده بر روی تغییرات وضعیت کاربر در فایربیس
-    db.ref('users/' + currentUser.username).on('value', snapshot => {
-      const data = snapshot.val();
-      const checkbox = document.getElementById('user-approval-checkbox');
-      const btn = document.getElementById('btn-submit-approval');
-      
-      if (data && data.approved) {
-        checkbox.checked = true;
-        checkbox.disabled = true;
-        btn.disabled = true;
-        btn.innerText = 'تاییدیه قبلاً ثبت شده است';
-        btn.style.backgroundColor = '#64748b';
-      } else {
-        checkbox.checked = false;
-        checkbox.disabled = false;
-        btn.disabled = false;
-        btn.innerText = 'ثبت نهایی تاییدیه';
-        btn.style.backgroundColor = 'var(--primary)';
-      }
-    });
+    // واکشی وضعیت تایید کاربر
+    fetch(`${REST_BASE_URL}/${currentUser.username}.json`)
+      .then(res => res.json())
+      .then(data => {
+        const checkbox = document.getElementById('user-approval-checkbox');
+        const btn = document.getElementById('btn-submit-approval');
+        if (data && data.approved) {
+          checkbox.checked = true;
+          checkbox.disabled = true;
+          btn.disabled = true;
+          btn.innerText = 'تاییدیه قبلاً ثبت شده است';
+          btn.style.backgroundColor = '#64748b';
+        } else {
+          checkbox.checked = false;
+          checkbox.disabled = false;
+          btn.disabled = false;
+          btn.innerText = 'ثبت نهایی تاییدیه';
+          btn.style.backgroundColor = 'var(--primary)';
+        }
+      });
   }
 
   function saveUserApproval() {
@@ -203,13 +237,27 @@
     }
 
     const timestamp = new Date().toLocaleString('fa-IR');
-    db.ref('users/' + currentUser.username).update({
-      approved: true,
-      approvalDate: timestamp
-    }).then(() => {
+    const updateData = { approved: true, approvalDate: timestamp };
+
+    fetch(`${REST_BASE_URL}/${currentUser.username}.json`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updateData)
+    })
+    .then(res => res.json())
+    .then(() => {
       alert('تاییدیه شما با موفقیت در پایگاه داده ابری ثبت گردید.');
-    }).catch(error => {
-      alert('خطا در ثبت: ' + error.message);
+      showUserView();
+    })
+    .catch(error => {
+      if (db) {
+        db.ref('users/' + currentUser.username).update(updateData).then(() => {
+          alert('تاییدیه شما با موفقیت ثبت گردید.');
+          showUserView();
+        });
+      } else {
+        alert('خطا در ثبت: ' + error.message);
+      }
     });
   }
 
@@ -218,25 +266,86 @@
     document.getElementById('view-user').classList.add('hidden');
     document.getElementById('view-admin').classList.remove('hidden');
 
+    loadAdminTable();
+  }
 
-function loadAdminTable() {
+  function addUser() {
+    const name = document.getElementById('new-name').value.trim();
+    const u = document.getElementById('new-username').value.trim();
+    const p = document.getElementById('new-password').value.trim();
+
+    if (!name || !u || !p) {
+      alert('لطفاً تمامی فیلدهای نام، یوزرنیم و پسورد را تکمیل کنید.');
+      return;
+    }
+
+    const userData = {
+      fullName: name,
+      password: p,
+      approved: false,
+      approvalDate: '-'
+    };
+
+    fetch(`${REST_BASE_URL}/${u}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData)
+    })
+    .then(res => res.json())
+    .then(() => {
+      document.getElementById('new-name').value = '';
+      document.getElementById('new-username').value = '';
+      document.getElementById('new-password').value = '';
+      alert('کاربر جدید با موفقیت اضافه شد.');
+      loadAdminTable();
+    })
+    .catch(err => {
+      if (db) {
+        db.ref('users/' + u).set(userData).then(() => {
+          document.getElementById('new-name').value = '';
+          document.getElementById('new-username').value = '';
+          document.getElementById('new-password').value = '';
+          alert('کاربر جدید ثبت شد.');
+          loadAdminTable();
+        });
+      } else {
+        alert('خطا در ذخیره‌سازی: ' + err.message);
+      }
+    });
+  }
+
+  function deleteUser(username) {
+    if (confirm(`آیا از حذف کاربر ${username} اطمینان دارید؟`)) {
+      fetch(`${REST_BASE_URL}/${username}.json`, { method: 'DELETE' })
+        .then(() => {
+          alert(`کاربر ${username} حذف شد.`);
+          loadAdminTable();
+        })
+        .catch(err => {
+          if (db) db.ref('users/' + username).remove().then(() => loadAdminTable());
+          else alert('خطا در حذف: ' + err.message);
+        });
+    }
+  }
+
+  function loadAdminTable() {
     const tbody = document.getElementById('admin-table-body');
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">در حال دریافت اطلاعات...</td></tr>';
 
-    // روش ۱: دریافت استاندارد از طریق REST API فایربیس (تضمین کارکرد در تمام شبکه‌ها)
-    fetch("https://kntu-approval-system-default-rtdb.firebaseio.com/users.json")
+    fetch(`${REST_BASE_URL}.json`)
       .then(res => res.json())
       .then(users => {
         renderTableRows(users || {});
       })
       .catch(err => {
-        console.error("خطا در واکشی مستقیم:", err);
+        if (db) {
+          db.ref('users').once('value', snapshot => {
+            renderTableRows(snapshot.val() || {});
+          });
+        } else {
+          tbody.innerHTML = '<tr><td colspan="5" style="color:#dc2626;">خطا در واکشی اطلاعات از سرور</td></tr>';
+        }
       });
-
-    // روش ۲: دریافت زنده تغییرات
-    db.ref('users').on('value', snapshot => {
-      const users = snapshot.val() || {};
-      renderTableRows(users);
-    });
   }
 
   function renderTableRows(users) {
@@ -245,7 +354,7 @@ function loadAdminTable() {
 
     const keys = Object.keys(users);
     if (keys.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">هیچ کاربری تعریف نشده است.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">هیچ کاربری در سامانه تعریف نشده است.</td></tr>';
       return;
     }
 
@@ -269,79 +378,7 @@ function loadAdminTable() {
     });
   }
 
-
-  function addUser() {
-    const name = document.getElementById('new-name').value.trim();
-    const u = document.getElementById('new-username').value.trim();
-    const p = document.getElementById('new-password').value.trim();
-
-    if (!name || !u || !p) {
-      alert('لطفاً تمامی فیلدهای نام، یوزرنیم و پسورد را تکمیل کنید.');
-      return;
-    }
-
-    db.ref('users/' + u).set({
-      fullName: name,
-      password: p,
-      approved: false,
-      approvalDate: '-'
-    }).then(() => {
-      document.getElementById('new-name').value = '';
-      document.getElementById('new-username').value = '';
-      document.getElementById('new-password').value = '';
-      alert('کاربر جدید با موفقیت ایجاد شد و در تمام مرورگرها در دسترس است.');
-    }).catch(error => {
-      alert('خطا در ذخیره‌سازی: ' + error.message);
-    });
-  }
-
-  function deleteUser(username) {
-    if (confirm(`آیا از حذف کاربر ${username} اطمینان دارید؟`)) {
-      db.ref('users/' + username).remove().catch(error => {
-        alert('خطا در حذف کاربر: ' + error.message);
-      });
-    }
-  }
-
-  function loadAdminTable() {
-    // دریافت آنلاین و همگام فهرست کاربران
-    db.ref('users').on('value', snapshot => {
-      const users = snapshot.val() || {};
-      const tbody = document.getElementById('admin-table-body');
-      tbody.innerHTML = '';
-
-      const keys = Object.keys(users);
-      if (keys.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">هیچ کاربری تعریف نشده است.</td></tr>';
-        return;
-      }
-
-      keys.forEach(key => {
-        const val = users[key];
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${val.fullName || '-'}</td>
-          <td style="font-family:monospace; direction:ltr;">${key}</td>
-          <td>
-            <span class="status-badge ${val.approved ? 'status-approved' : 'status-pending'}">
-              ${val.approved ? 'تایید شده' : 'در انتظار تایید'}
-            </span>
-          </td>
-          <td>${val.approvalDate || '-'}</td>
-          <td>
-            <button type="button" class="btn-danger" style="padding: 4px 8px; font-size: 11px;" onclick="deleteUser('${key}')">حذف</button>
-          </td>
-        `;
-        tbody.appendChild(tr);
-      });
-    });
-  }
-
   function logout() {
-    if (currentUser && currentUser.username !== 'admin') {
-      db.ref('users/' + currentUser.username).off();
-    }
-    db.ref('users').off();
     currentUser = null;
     document.getElementById('login-username').value = '';
     document.getElementById('login-password').value = '';
