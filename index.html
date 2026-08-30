@@ -118,20 +118,20 @@
 <script>
   // تنظیمات اتصال فایربیس
   const firebaseConfig = {
-    apiKey: "AIzaSyDtNPMvukuLornNSxHXhjV_hduqB4CvxUg",
-    authDomain: "kntu-approval-system.firebaseapp.com",
-    databaseURL: "https://kntu-approval-system-default-rtdb.firebaseio.com",
-    projectId: "kntu-approval-system",
-    storageBucket: "kntu-approval-system.firebasestorage.app",
-    messagingSenderId: "267537800388",
-    appId: "1:267537800388:web:ff2c9847266e50d1787d91",
-    measurementId: "G-58B1GDTDBL"
+    apiKey: "AIzaSyDtNPMvukuLornNSxHXhjV_hduqB4CvxUg",
+    authDomain: "kntu-approval-system.firebaseapp.com",
+    databaseURL: "https://kntu-approval-system-default-rtdb.firebaseio.com",
+    projectId: "kntu-approval-system",
+    storageBucket: "kntu-approval-system.firebasestorage.app",
+    messagingSenderId: "267537800388",
+    appId: "1:267537800388:web:ff2c9847266e50d1787d91",
+    measurementId: "G-58B1GDTDBL"
   };
 
-   // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-</script>
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  let currentUser = null;
 
   // تابع ورود
   function handleLogin() {
