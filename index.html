@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>سامانه ثبت و تایید تعهدات</title>
+  <style>
+    :root {
+      --primary: #1e3a8a;
+      --secondary: #0d9488;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1f2937;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; font-family: Tahoma, 'Vazir', sans-serif; }
+    body { background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .container { width: 100%; max-width: 750px; background: var(--card); padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+    h2, h3 { color: var(--primary); margin-top: 0; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+    input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+    button { background-color: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; }
+    button:hover { background-color: #1d4ed8; }
+    .btn-secondary { background-color: #64748b; margin-right: 10px; }
+    .btn-secondary:hover { background-color: #475569; }
+    .btn-danger { background-color: #dc2626; }
+    .btn-danger:hover { background-color: #b91c1c; }
+    .hidden { display: none; }
+    .statement-box { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid var(--primary); margin: 20px 0; line-height: 1.6; }
+    .checkbox-container { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th, td { border: 1px solid var(--border); padding: 10px; text-align: center; }
+    th { background-color: #f8fafc; color: var(--primary); }
+    .status-badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+    .status-approved { background-color: #dcfce7; color: #15803d; }
+    .status-pending { background-color: #fee2e2; color: #b91c1c; }
+    .navbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
+  </style>
+  
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- صفحه لاگین -->
+  <div id="view-login">
+    <h2>ورود به سامانه</h2>
+    <div class="form-group">
+      <label>نام کاربری:</label>
+      <input type="text" id="login-username" placeholder="کد پرسنلی / نام کاربری">
+    </div>
+    <div class="form-group">
+      <label>رمز عبور:</label>
+      <input type="password" id="login-password" placeholder="کلمه عبور">
+    </div>
+    <button onclick="handleLogin()">ورود</button>
+  </div>
+
+  <!-- پنل کاربر عادی -->
+  <div id="view-user" class="hidden">
+    <div class="navbar">
+      <span>کاربر گرامی: <strong id="user-display-name"></strong></span>
+      <button class="btn-secondary" onclick="logout()">خروج</button>
+    </div>
+    
+    <div class="statement-box">
+      <strong>متن بیانیه / تعهد:</strong><br>
+      بدین‌وسیله مفاد و شرایط مندرج را به‌طور کامل مطالعه نموده و صحت اطلاعات و تعهدات مورد نظر را رسماً تایید می‌نمایم.
+    </div>
+
+    <div class="checkbox-container">
+      <input type="checkbox" id="user-approval-checkbox" style="width: 20px; height: 20px;">
+      <label for="user-approval-checkbox">عبارت فوق مورد تایید است.</label>
+    </div>
+
+    <button onclick="saveUserApproval()">ثبت نهایی تاییدیه</button>
+  </div>
+
+  <!-- پنل مدیریت -->
+  <div id="view-admin" class="hidden">
+    <div class="navbar">
+      <span>پنل مدیریت سیستم</span>
+      <button class="btn-secondary" onclick="logout()">خروج</button>
+    </div>
+
+    <h3>تعریف / افزودن کاربر جدید</h3>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+      <input type="text" id="new-name" placeholder="نام و نام خانوادگی" style="flex: 1;">
+      <input type="text" id="new-username" placeholder="نام کاربری" style="flex: 1;">
+      <input type="password" id="new-password" placeholder="رمز عبور" style="flex: 1;">
+      <button onclick="addUser()">افزودن کاربر</button>
+    </div>
+
+    <h3>گزارش وضعیت تایید کاربران</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>نام و نام خانوادگی</th>
+          <th>نام کاربری</th>
+          <th>وضعیت تایید</th>
+          <th>زمان ثبت تایید</th>
+          <th>عملیات</th>
+        </tr>
+      </thead>
+      <tbody id="admin-table-body">
+        <!-- ردیف‌ها به صورت پویا اضافه می‌شوند -->
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  // ۱. تنظیمات فایربیس خود را در اینجا جایگزین کنید:
+   apiKey: "AIzaSyDtNPMvukuLornNSxHXhjV_hduqB4CvxUg",
+  authDomain: "kntu-approval-system.firebaseapp.com",
+  databaseURL: "https://kntu-approval-system-default-rtdb.firebaseio.com",
+  projectId: "kntu-approval-system",
+  storageBucket: "kntu-approval-system.firebasestorage.app",
+  messagingSenderId: "267537800388",
+  appId: "1:267537800388:web:ff2c9847266e50d1787d91",
+  measurementId: "G-58B1GDTDBL"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  let currentUser = null;
+
+  // بررسی احراز هویت
+  function handleLogin() {
+    const u = document.getElementById('login-username').value.trim();
+    const p = document.getElementById('login-password').value.trim();
+
+    if (!u || !p) {
+      alert('لطفاً نام کاربری و کلمه عبور را وارد کنید.');
+      return;
+    }
+
+    // بررسی اکانت ادمین
+    if (u === 'admin' && p === 'admin123') {
+      currentUser = { username: 'admin', role: 'admin' };
+      showAdminView();
+      return;
+    }
+
+    // بررسی کاربران عادی از دیتابیس
+    db.ref('users/' + u).once('value', snapshot => {
+      const data = snapshot.val();
+      if (data && data.password === p) {
+        currentUser = { username: u, ...data };
+        showUserView();
+      } else {
+        alert('نام کاربری یا رمز عبور نامعتبر است.');
+      }
+    });
+  }
+
+  function showUserView() {
+    document.getElementById('view-login').classList.add('hidden');
+    document.getElementById('view-admin').classList.add('hidden');
+    document.getElementById('view-user').classList.remove('hidden');
+
+    document.getElementById('user-display-name').innerText = currentUser.fullName || currentUser.username;
+    
+    // دریافت وضعیت فعلی تایید
+    db.ref('users/' + currentUser.username).on('value', snapshot => {
+      const data = snapshot.val();
+      if (data && data.approved) {
+        document.getElementById('user-approval-checkbox').checked = true;
+        document.getElementById('user-approval-checkbox').disabled = true;
+      } else {
+        document.getElementById('user-approval-checkbox').checked = false;
+        document.getElementById('user-approval-checkbox').disabled = false;
+      }
+    });
+  }
+
+  function saveUserApproval() {
+    const isChecked = document.getElementById('user-approval-checkbox').checked;
+    if (!isChecked) {
+      alert('لطفاً تیک تایید عبارت را بزنید.');
+      return;
+    }
+
+    const timestamp = new Date().toLocaleString('fa-IR');
+    db.ref('users/' + currentUser.username).update({
+      approved: true,
+      approvalDate: timestamp
+    }).then(() => {
+      alert('تاییدیه شما با موفقیت ثبت گردید.');
+    });
+  }
+
+  function showAdminView() {
+    document.getElementById('view-login').classList.add('hidden');
+    document.getElementById('view-user').classList.add('hidden');
+    document.getElementById('view-admin').classList.remove('hidden');
+
+    loadAdminTable();
+  }
+
+  function addUser() {
+    const name = document.getElementById('new-name').value.trim();
+    const u = document.getElementById('new-username').value.trim();
+    const p = document.getElementById('new-password').value.trim();
+
+    if (!name || !u || !p) {
+      alert('تمامی فیلدها را پر کنید.');
+      return;
+    }
+
+    db.ref('users/' + u).set({
+      fullName: name,
+      password: p,
+      approved: false,
+      approvalDate: '-'
+    }).then(() => {
+      document.getElementById('new-name').value = '';
+      document.getElementById('new-username').value = '';
+      document.getElementById('new-password').value = '';
+      alert('کاربر با موفقیت اضافه شد.');
+    });
+  }
+
+  function deleteUser(username) {
+    if (confirm(`آیا از حذف کاربر ${username} اطمینان دارید؟`)) {
+      db.ref('users/' + username).remove();
+    }
+  }
+
+  function loadAdminTable() {
+    db.ref('users').on('value', snapshot => {
+      const users = snapshot.val() || {};
+      const tbody = document.getElementById('admin-table-body');
+      tbody.innerHTML = '';
+
+      for (const [key, val] of Object.entries(users)) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${val.fullName || '-'}</td>
+          <td>${key}</td>
+          <td>
+            <span class="status-badge ${val.approved ? 'status-approved' : 'status-pending'}">
+              ${val.approved ? 'تایید شده' : 'در انتظار تایید'}
+            </span>
+          </td>
+          <td>${val.approvalDate || '-'}</td>
+          <td>
+            <button class="btn-danger" style="padding: 4px 8px; font-size: 11px;" onclick="deleteUser('${key}')">حذف</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      }
+    });
+  }
+
+  function logout() {
+    currentUser = null;
+    document.getElementById('login-username').value = '';
+    document.getElementById('login-password').value = '';
+    document.getElementById('view-login').classList.remove('hidden');
+    document.getElementById('view-user').classList.add('hidden');
+    document.getElementById('view-admin').classList.add('hidden');
+  }
+</script>
+
+</body>
+</html>
