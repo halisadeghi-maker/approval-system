@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>سامانه ثبت و تایید تعهدات</title>
+  <title>سامانه ثبت تعهدات و پرداخت شناسه دار دولتی</title>
   <style>
     :root {
       --primary: #1e3a8a;
@@ -15,17 +15,21 @@
     }
     * { box-sizing: border-box; font-family: Tahoma, 'Vazir', sans-serif; }
     body { background-color: var(--bg); color: var(--text); margin: 0; padding: 15px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    .container { width: 100%; max-width: 800px; background: var(--card); padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+    .container { width: 100%; max-width: 850px; background: var(--card); padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
     h2, h3 { color: var(--primary); margin-top: 0; }
     .form-group { margin-bottom: 15px; }
     label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 13px; }
-    input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+    input[type="text"], input[type="password"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
     button { background-color: var(--primary); color: white; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; transition: 0.2s; }
     button:hover { background-color: #1d4ed8; }
     .btn-secondary { background-color: #64748b; }
     .btn-danger { background-color: #dc2626; }
+    .btn-pay { background-color: #15803d; }
+    .btn-pay:hover { background-color: #166534; }
     .hidden { display: none !important; }
     .statement-box { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid var(--primary); margin: 20px 0; line-height: 1.6; font-size: 13px; }
+    .payment-info-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+    .payment-info-box p { margin: 5px 0; font-size: 13px; }
     .checkbox-container { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
     table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
     th, td { border: 1px solid var(--border); padding: 8px; text-align: center; }
@@ -39,6 +43,9 @@
 
   <!-- Supabase CDN Client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Crypto-JS for TripleDES signing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/tripledes.min.js"></script>
 </head>
 <body>
 
@@ -46,7 +53,7 @@
 
   <!-- صفحه لاگین -->
   <div id="view-login">
-    <h2>ورود به سامانه</h2>
+    <h2>ورود به سامانه تعهدات و پرداخت</h2>
     <div class="form-group">
       <label>نام کاربری:</label>
       <input type="text" id="login-username" placeholder="کد پرسنلی / نام کاربری">
@@ -64,24 +71,33 @@
       <span>کاربر گرامی: <strong id="user-display-name"></strong></span>
       <button class="btn-secondary" onclick="logout()">خروج</button>
     </div>
+
+    <div class="payment-info-box">
+      <p><strong>مبلغ ودیعه / هزینه:</strong> <span id="display-amount">۰</span> ریال</p>
+      <p><strong>شناسه پرداخت ۳۰ رقمی نسیم:</strong> <span id="display-payment-id" style="font-family: monospace; direction: ltr;">-</span></p>
+      <p><strong>وضعیت پرداخت:</strong> <span id="display-payment-status" class="status-badge status-pending">در انتظار پرداخت</span></p>
+    </div>
     
     <div class="statement-box">
       <strong>متن بیانیه / تعهد:</strong><br>
-      بدین‌وسیله مفاد و شرایط مندرج را به‌طور کامل مطالعه نموده و صحت اطلاعات و تعهدات مورد نظر را رسماً تایید می‌نمایم.
+      بدین‌وسیله مفاد و شرایط مندرج را به‌طور کامل مطالعه نموده و صحت اطلاعات و تعهدات مالی و اداری فوق را رسماً تایید می‌نمایم.
     </div>
 
     <div class="checkbox-container">
       <input type="checkbox" id="user-approval-checkbox" style="width: 20px; height: 20px;">
-      <label for="user-approval-checkbox">عبارت فوق مورد تایید است.</label>
+      <label for="user-approval-checkbox">مفاد بیانیه فوق مورد تایید است.</label>
     </div>
 
-    <button type="button" id="btn-submit-approval" onclick="saveUserApproval()" style="width: 100%;">ثبت نهایی تاییدیه</button>
+    <div style="display: flex; gap: 10px;">
+      <button type="button" id="btn-submit-approval" onclick="saveUserApproval()" style="flex: 1;">ثبت تاییدیه تعهد</button>
+      <button type="button" id="btn-submit-payment" class="btn-pay" onclick="initiateSadadPayment()" style="flex: 1;">پرداخت از درگاه سداد (شاپرک)</button>
+    </div>
   </div>
 
   <!-- پنل مدیریت -->
   <div id="view-admin" class="hidden">
     <div class="navbar">
-      <span>پنل مدیریت سیستم</span>
+      <span>پنل مدیریت سامانه</span>
       <div style="display: flex; gap: 8px;">
         <button class="btn-secondary" style="background-color: #0284c7;" onclick="loadAdminTable()">⟳ بازخوانی اطلاعات</button>
         <button class="btn-secondary" onclick="logout()">خروج</button>
@@ -89,31 +105,36 @@
     </div>
 
     <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
-      <h3 style="margin: 0; font-size: 14px;">تعریف کاربر جدید</h3>
+      <h3 style="margin: 0; font-size: 14px;">تعریف کاربر و شناسه پرداخت جدید</h3>
       <span id="sync-status" class="badge" style="background: #dcfce7; color: #15803d;">● پایگاه داده فعال (Supabase)</span>
     </div>
 
-    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;">
-      <input type="text" id="new-name" placeholder="نام و نام خانوادگی" style="flex: 1; min-width: 140px;">
-      <input type="text" id="new-username" placeholder="نام کاربری" style="flex: 1; min-width: 120px;">
-      <input type="password" id="new-password" placeholder="رمز عبور" style="flex: 1; min-width: 120px;">
-      <button type="button" onclick="addUser()">افزودن</button>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-bottom: 20px;">
+      <input type="text" id="new-name" placeholder="نام و نام خانوادگی">
+      <input type="text" id="new-username" placeholder="نام کاربری">
+      <input type="password" id="new-password" placeholder="رمز عبور">
+      <input type="number" id="new-amount" placeholder="مبلغ (ریال)">
+      <input type="text" id="new-payment-id" placeholder="شناسه ۳۰ رقمی نسیم" maxlength="30">
+      <button type="button" onclick="addUser()" style="grid-column: span 1;">افزودن کاربر</button>
     </div>
 
-    <h3 style="font-size: 14px;">گزارش وضعیت تایید کاربران</h3>
+    <h3 style="font-size: 14px;">گزارش وضعیت تایید و پرداخت کاربران</h3>
     <div style="overflow-x: auto;">
       <table>
         <thead>
           <tr>
             <th>نام و نام خانوادگی</th>
             <th>نام کاربری</th>
-            <th>وضعیت</th>
-            <th>زمان تایید</th>
+            <th>شناسه نسیم</th>
+            <th>مبلغ (ریال)</th>
+            <th>وضعیت تایید</th>
+            <th>وضعیت پرداخت</th>
+            <th>شماره پیگیری</th>
             <th>عملیات</th>
           </tr>
         </thead>
         <tbody id="admin-table-body">
-          <tr><td colspan="5" style="color:#64748b;">در حال فراخوانی داده‌ها...</td></tr>
+          <tr><td colspan="8" style="color:#64748b;">در حال فراخوانی داده‌ها...</td></tr>
         </tbody>
       </table>
     </div>
@@ -122,12 +143,20 @@
 </div>
 
 <script>
-  // تنظیمات اتصال تصحیح شده Supabase
+  // تنظیمات اتصال Supabase
   const SUPABASE_URL = "https://yzpuzzzpdldgmmlzetvq.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_ZaicEd-rDmvuOMw3QpV7WA_aIh2Y9JE";
-
   const { createClient } = supabase;
   const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // مشخصات پذیرنده درگاه پرداخت سداد (طبق مستندات بانک)
+  const SADAD_CONFIG = {
+    merchantId: "YOUR_MERCHANT_ID",
+    terminalId: "YOUR_TERMINAL_ID",
+    terminalKey: "YOUR_TERMINAL_KEY_BASE64",
+    paymentUrl: "https://sadad.shaparak.ir/VPG/Purchase",
+    requestApi: "https://sadad.shaparak.ir/api/v0/PaymentByIdentity/PaymentRequest"
+  };
 
   let currentUser = null;
 
@@ -140,7 +169,6 @@
       return;
     }
 
-    // ورود ادمین
     if (u === 'admin' && p === 'admin123') {
       currentUser = { username: 'admin', role: 'admin' };
       showAdminView();
@@ -152,12 +180,7 @@
     btn.innerText = 'در حال بررسی...';
 
     try {
-      const { data, error } = await db
-        .from('users')
-        .select('*')
-        .eq('username', u)
-        .single();
-
+      const { data, error } = await db.from('users').select('*').eq('username', u).single();
       btn.disabled = false;
       btn.innerText = 'ورود';
 
@@ -185,9 +208,16 @@
     document.getElementById('view-user').classList.remove('hidden');
 
     document.getElementById('user-display-name').innerText = currentUser.full_name || currentUser.username;
+    document.getElementById('display-amount').innerText = Number(currentUser.amount || 0).toLocaleString('fa-IR');
+    document.getElementById('display-payment-id').innerText = currentUser.payment_identity || '-';
     
-    const { data } = await db.from('users').select('*').eq('username', currentUser.username).single();
-    if (data) currentUser = data;
+    const statusElem = document.getElementById('display-payment-status');
+    statusElem.innerText = currentUser.payment_status || 'در انتظار پرداخت';
+    if (currentUser.payment_status === 'پرداخت موفق') {
+      statusElem.className = 'status-badge status-approved';
+      document.getElementById('btn-submit-payment').disabled = true;
+      document.getElementById('btn-submit-payment').innerText = 'پرداخت انجام شده است';
+    }
 
     const checkbox = document.getElementById('user-approval-checkbox');
     const btn = document.getElementById('btn-submit-approval');
@@ -207,6 +237,72 @@
     }
   }
 
+  // ایجاد امضای دیجیتال سداد با TripleDES (مطابق بخش ۶.۲.۳.۷ مستند سداد)
+  function generateSadadSignData(terminalId, orderId, amount, terminalKeyBase64) {
+    const rawData = `${terminalId};${orderId};${amount}`;
+    const key = CryptoJS.enc.Base64.parse(terminalKeyBase64);
+    const encrypted = CryptoJS.TripleDES.encrypt(rawData, key, {
+      mode: CryptoJS.mode.ECB,
+      padding: CryptoJS.pad.Pkcs7
+    });
+    return encrypted.toString();
+  }
+
+  // اتصال و هدایت به درگاه پرداخت شناسه دار سداد (PaymentByIdentity)
+  async function initiateSadadPayment() {
+    if (!currentUser.payment_identity || currentUser.payment_identity === '-') {
+      alert('شناسه ۳۰ رقمی پرداخت دولتی برای شما تعریف نشده است.');
+      return;
+    }
+
+    const amount = Number(currentUser.amount);
+    if (!amount || amount <= 0) {
+      alert('مبلغ پرداختی نامعتبر است.');
+      return;
+    }
+
+    const orderId = Math.floor(Math.random() * 899999999 + 100000000);
+    const signData = generateSadadSignData(SADAD_CONFIG.terminalId, orderId, amount, SADAD_CONFIG.terminalKey);
+    const now = new Date().toISOString();
+
+    const requestPayload = {
+      MerchantId: SADAD_CONFIG.merchantId,
+      TerminalId: SADAD_CONFIG.terminalId,
+      Amount: amount,
+      OrderId: orderId,
+      LocalDateTime: now,
+      ReturnUrl: window.location.href,
+      SignData: signData,
+      PaymentIdentity: currentUser.payment_identity
+    };
+
+    const btn = document.getElementById('btn-submit-payment');
+    btn.disabled = true;
+    btn.innerText = 'در حال اتصال به درگاه شاپرک...';
+
+    try {
+      const response = await fetch(SADAD_CONFIG.requestApi, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestPayload)
+      });
+      const resData = await response.json();
+
+      if (resData.ResCode === 0 && resData.Token) {
+        // هدایت مستقیم کاربر به صفحه شاپرک
+        window.location.href = `${SADAD_CONFIG.paymentUrl}?Token=${resData.Token}`;
+      } else {
+        alert(`خطا در ایجاد تراکنش: کد ${resData.ResCode} - ${resData.Description || ''}`);
+        btn.disabled = false;
+        btn.innerText = 'پرداخت از درگاه سداد (شاپرک)';
+      }
+    } catch (err) {
+      alert('خطا در ارتباط با سرور پرداخت سداد. (در محیط عملیاتی این فراخوانی باید از IP سرور مجاز پذیرنده ارسال گردد).');
+      btn.disabled = false;
+      btn.innerText = 'پرداخت از درگاه سداد (شاپرک)';
+    }
+  }
+
   async function saveUserApproval() {
     const isChecked = document.getElementById('user-approval-checkbox').checked;
     if (!isChecked) {
@@ -215,14 +311,13 @@
     }
 
     const timestamp = new Date().toLocaleString('fa-IR');
-    
     const { error } = await db
       .from('users')
       .update({ approved: true, approval_date: timestamp })
       .eq('username', currentUser.username);
 
     if (error) {
-      alert('خطا در ثبت تاییدیه: ' + error.message);
+      alert('خطا در ثبت: ' + error.message);
     } else {
       alert('تاییدیه شما با موفقیت ثبت گردید.');
       currentUser.approved = true;
@@ -234,7 +329,6 @@
     document.getElementById('view-login').classList.add('hidden');
     document.getElementById('view-user').classList.add('hidden');
     document.getElementById('view-admin').classList.remove('hidden');
-
     loadAdminTable();
   }
 
@@ -242,9 +336,11 @@
     const name = document.getElementById('new-name').value.trim();
     const u = document.getElementById('new-username').value.trim();
     const p = document.getElementById('new-password').value.trim();
+    const amount = document.getElementById('new-amount').value.trim();
+    const paymentId = document.getElementById('new-payment-id').value.trim();
 
-    if (!name || !u || !p) {
-      alert('لطفاً تمامی فیلدها را تکمیل کنید.');
+    if (!name || !u || !p || !paymentId) {
+      alert('لطفاً تمامی فیلدها شامل نام، شناسه کاربری، رمز عبور و شناسه نسیم را تکمیل کنید.');
       return;
     }
 
@@ -253,18 +349,23 @@
         username: u,
         full_name: name,
         password: p,
+        amount: Number(amount) || 0,
+        payment_identity: paymentId,
+        payment_status: 'در انتظار پرداخت',
         approved: false,
         approval_date: '-'
       }
     ]);
 
     if (error) {
-      alert('خطا در افزودن کاربر (احتمالاً نام کاربری تکراری است): ' + error.message);
+      alert('خطا در افزودن کاربر: ' + error.message);
     } else {
       document.getElementById('new-name').value = '';
       document.getElementById('new-username').value = '';
       document.getElementById('new-password').value = '';
-      alert('کاربر جدید با موفقیت اضافه شد.');
+      document.getElementById('new-amount').value = '';
+      document.getElementById('new-payment-id').value = '';
+      alert('کاربر و مشخصات شناسه نسیم با موفقیت ثبت گردید.');
       loadAdminTable();
     }
   }
@@ -272,28 +373,25 @@
   async function deleteUser(username) {
     if (confirm(`آیا از حذف کاربر ${username} اطمینان دارید؟`)) {
       const { error } = await db.from('users').delete().eq('username', username);
-      if (error) {
-        alert('خطا در حذف کاربر: ' + error.message);
-      } else {
-        loadAdminTable();
-      }
+      if (error) alert('خطا در حذف کاربر: ' + error.message);
+      else loadAdminTable();
     }
   }
 
   async function loadAdminTable() {
     const tbody = document.getElementById('admin-table-body');
-    tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">در حال دریافت اطلاعات...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="color:#64748b;">در حال دریافت اطلاعات...</td></tr>';
 
     const { data: users, error } = await db.from('users').select('*').order('username', { ascending: true });
 
     if (error) {
-      tbody.innerHTML = `<tr><td colspan="5" style="color:#dc2626;">خطا در دریافت: ${error.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" style="color:#dc2626;">خطا در دریافت: ${error.message}</td></tr>`;
       return;
     }
 
     tbody.innerHTML = '';
     if (!users || users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="color:#64748b;">هیچ کاربری در سامانه تعریف نشده است.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="color:#64748b;">هیچ کاربری در سامانه تعریف نشده است.</td></tr>';
       return;
     }
 
@@ -302,12 +400,19 @@
       tr.innerHTML = `
         <td>${val.full_name || '-'}</td>
         <td style="font-family:monospace; direction:ltr;">${val.username}</td>
+        <td style="font-family:monospace; font-size:11px;">${val.payment_identity || '-'}</td>
+        <td>${Number(val.amount || 0).toLocaleString('fa-IR')}</td>
         <td>
           <span class="status-badge ${val.approved ? 'status-approved' : 'status-pending'}">
             ${val.approved ? 'تایید شده' : 'در انتظار تایید'}
           </span>
         </td>
-        <td>${val.approval_date || '-'}</td>
+        <td>
+          <span class="status-badge ${val.payment_status === 'پرداخت موفق' ? 'status-approved' : 'status-pending'}">
+            ${val.payment_status || 'نامشخص'}
+          </span>
+        </td>
+        <td style="font-family:monospace; font-size:11px;">${val.trace_no || '-'}</td>
         <td>
           <button type="button" class="btn-danger" style="padding: 3px 6px; font-size: 11px;" onclick="deleteUser('${val.username}')">حذف</button>
         </td>
