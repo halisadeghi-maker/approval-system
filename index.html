@@ -41,19 +41,16 @@
     .badge { font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: bold; }
   </style>
 
-  <!-- Supabase CDN Client -->
+  <!-- Supabase JS Client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- Crypto-JS for TripleDES signing -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/tripledes.min.js"></script>
 </head>
 <body>
 
 <div class="container">
 
-  <!-- صفحه لاگین -->
+  <!-- صفحه ورود -->
   <div id="view-login">
-    <h2>ورود به سامانه تعهدات و پرداخت</h2>
+    <h2>ورود به سامانه تعهدات و پرداخت شناسه دار</h2>
     <div class="form-group">
       <label>نام کاربری:</label>
       <input type="text" id="login-username" placeholder="کد پرسنلی / نام کاربری">
@@ -73,9 +70,10 @@
     </div>
 
     <div class="payment-info-box">
-      <p><strong>مبلغ ودیعه / هزینه:</strong> <span id="display-amount">۰</span> ریال</p>
+      <p><strong>مبلغ ودیعه / تعهد:</strong> <span id="display-amount">۰</span> ریال</p>
       <p><strong>شناسه پرداخت ۳۰ رقمی نسیم:</strong> <span id="display-payment-id" style="font-family: monospace; direction: ltr;">-</span></p>
       <p><strong>وضعیت پرداخت:</strong> <span id="display-payment-status" class="status-badge status-pending">در انتظار پرداخت</span></p>
+      <p id="receipt-box" class="hidden"><strong>شماره پیگیری پرداخت:</strong> <span id="display-trace-no" style="font-family: monospace;">-</span></p>
     </div>
     
     <div class="statement-box">
@@ -90,7 +88,7 @@
 
     <div style="display: flex; gap: 10px;">
       <button type="button" id="btn-submit-approval" onclick="saveUserApproval()" style="flex: 1;">ثبت تاییدیه تعهد</button>
-      <button type="button" id="btn-submit-payment" class="btn-pay" onclick="initiateSadadPayment()" style="flex: 1;">پرداخت از درگاه سداد (شاپرک)</button>
+      <button type="button" id="btn-submit-payment" class="btn-pay" onclick="initiateServerlessPayment()" style="flex: 1;">پرداخت از درگاه سداد (شاپرک)</button>
     </div>
   </div>
 
@@ -106,7 +104,7 @@
 
     <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
       <h3 style="margin: 0; font-size: 14px;">تعریف کاربر و شناسه پرداخت جدید</h3>
-      <span id="sync-status" class="badge" style="background: #dcfce7; color: #15803d;">● پایگاه داده فعال (Supabase)</span>
+      <span id="sync-status" class="badge" style="background: #dcfce7; color: #15803d;">● سرورلس فعال (Edge Function)</span>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-bottom: 20px;">
@@ -115,7 +113,7 @@
       <input type="password" id="new-password" placeholder="رمز عبور">
       <input type="number" id="new-amount" placeholder="مبلغ (ریال)">
       <input type="text" id="new-payment-id" placeholder="شناسه ۳۰ رقمی نسیم" maxlength="30">
-      <button type="button" onclick="addUser()" style="grid-column: span 1;">افزودن کاربر</button>
+      <button type="button" onclick="addUser()">افزودن کاربر</button>
     </div>
 
     <h3 style="font-size: 14px;">گزارش وضعیت تایید و پرداخت کاربران</h3>
@@ -143,20 +141,10 @@
 </div>
 
 <script>
-  // تنظیمات اتصال Supabase
   const SUPABASE_URL = "https://yzpuzzzpdldgmmlzetvq.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_ZaicEd-rDmvuOMw3QpV7WA_aIh2Y9JE";
   const { createClient } = supabase;
   const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-  // مشخصات پذیرنده درگاه پرداخت سداد (طبق مستندات بانک)
-  const SADAD_CONFIG = {
-    merchantId: "YOUR_MERCHANT_ID",
-    terminalId: "YOUR_TERMINAL_ID",
-    terminalKey: "YOUR_TERMINAL_KEY_BASE64",
-    paymentUrl: "https://sadad.shaparak.ir/VPG/Purchase",
-    requestApi: "https://sadad.shaparak.ir/api/v0/PaymentByIdentity/PaymentRequest"
-  };
 
   let currentUser = null;
 
@@ -213,10 +201,15 @@
     
     const statusElem = document.getElementById('display-payment-status');
     statusElem.innerText = currentUser.payment_status || 'در انتظار پرداخت';
+
     if (currentUser.payment_status === 'پرداخت موفق') {
       statusElem.className = 'status-badge status-approved';
       document.getElementById('btn-submit-payment').disabled = true;
       document.getElementById('btn-submit-payment').innerText = 'پرداخت انجام شده است';
+      if (currentUser.trace_no && currentUser.trace_no !== '-') {
+        document.getElementById('receipt-box').classList.remove('hidden');
+        document.getElementById('display-trace-no').innerText = currentUser.trace_no;
+      }
     }
 
     const checkbox = document.getElementById('user-approval-checkbox');
@@ -232,74 +225,67 @@
       checkbox.checked = false;
       checkbox.disabled = false;
       btn.disabled = false;
-      btn.innerText = 'ثبت نهایی تاییدیه';
+      btn.innerText = 'ثبت تاییدیه تعهد';
       btn.style.backgroundColor = 'var(--primary)';
     }
   }
 
-  // ایجاد امضای دیجیتال سداد با TripleDES (مطابق بخش ۶.۲.۳.۷ مستند سداد)
-  function generateSadadSignData(terminalId, orderId, amount, terminalKeyBase64) {
-    const rawData = `${terminalId};${orderId};${amount}`;
-    const key = CryptoJS.enc.Base64.parse(terminalKeyBase64);
-    const encrypted = CryptoJS.TripleDES.encrypt(rawData, key, {
-      mode: CryptoJS.mode.ECB,
-      padding: CryptoJS.pad.Pkcs7
-    });
-    return encrypted.toString();
-  }
-
-  // اتصال و هدایت به درگاه پرداخت شناسه دار سداد (PaymentByIdentity)
-  async function initiateSadadPayment() {
+  // فراخوانی تابع بدون سرور جهت ایجاد تراکنش و دریافت توکن
+  async function initiateServerlessPayment() {
     if (!currentUser.payment_identity || currentUser.payment_identity === '-') {
       alert('شناسه ۳۰ رقمی پرداخت دولتی برای شما تعریف نشده است.');
       return;
     }
 
-    const amount = Number(currentUser.amount);
-    if (!amount || amount <= 0) {
-      alert('مبلغ پرداختی نامعتبر است.');
-      return;
-    }
-
-    const orderId = Math.floor(Math.random() * 899999999 + 100000000);
-    const signData = generateSadadSignData(SADAD_CONFIG.terminalId, orderId, amount, SADAD_CONFIG.terminalKey);
-    const now = new Date().toISOString();
-
-    const requestPayload = {
-      MerchantId: SADAD_CONFIG.merchantId,
-      TerminalId: SADAD_CONFIG.terminalId,
-      Amount: amount,
-      OrderId: orderId,
-      LocalDateTime: now,
-      ReturnUrl: window.location.href,
-      SignData: signData,
-      PaymentIdentity: currentUser.payment_identity
-    };
-
     const btn = document.getElementById('btn-submit-payment');
     btn.disabled = true;
-    btn.innerText = 'در حال اتصال به درگاه شاپرک...';
+    btn.innerText = 'در حال اتصال به سرور پرداخت...';
 
     try {
-      const response = await fetch(SADAD_CONFIG.requestApi, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestPayload)
+      const { data, error } = await db.functions.invoke('sadad-payment', {
+        body: {
+          action: 'request',
+          username: currentUser.username,
+          returnUrl: window.location.href.split('?')[0] + '?action=verify_payment&username=' + currentUser.username
+        }
       });
-      const resData = await response.json();
 
-      if (resData.ResCode === 0 && resData.Token) {
-        // هدایت مستقیم کاربر به صفحه شاپرک
-        window.location.href = `${SADAD_CONFIG.paymentUrl}?Token=${resData.Token}`;
+      if (error || !data) {
+        throw new Error(error?.message || 'پاسخی از سرور دریافت نشد.');
+      }
+
+      if (data.ResCode === 0 && data.Token) {
+        // ذخیره توکن موقت و هدایت به شاپرک
+        window.location.href = `https://sadad.shaparak.ir/VPG/Purchase?Token=${data.Token}`;
       } else {
-        alert(`خطا در ایجاد تراکنش: کد ${resData.ResCode} - ${resData.Description || ''}`);
+        alert(`خطا در ایجاد تراکنش: کد ${data.ResCode} - ${data.Description || ''}`);
         btn.disabled = false;
         btn.innerText = 'پرداخت از درگاه سداد (شاپرک)';
       }
     } catch (err) {
-      alert('خطا در ارتباط با سرور پرداخت سداد. (در محیط عملیاتی این فراخوانی باید از IP سرور مجاز پذیرنده ارسال گردد).');
+      alert('خطا در فرآیند پرداخت سرورلس: ' + err.message);
       btn.disabled = false;
       btn.innerText = 'پرداخت از درگاه سداد (شاپرک)';
+    }
+  }
+
+  // بررسی وضعیت بازگشت از درگاه سداد به صورت خودکار
+  async function checkReturnFromGateway() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('action') === 'verify_payment' && urlParams.get('token')) {
+      const token = urlParams.get('token');
+      const u = urlParams.get('username');
+      
+      const { data } = await db.functions.invoke('sadad-payment', {
+        body: { action: 'verify', username: u, token: token }
+      });
+
+      if (data && data.ResCode === 0) {
+        alert(`پرداخت با موفقیت انجام شد.\nشماره پیگیری: ${data.SystemTraceNo}`);
+      } else {
+        alert('تراکنش ناموفق بود یا توسط کاربر لغو گردید.');
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
   }
 
@@ -340,7 +326,7 @@
     const paymentId = document.getElementById('new-payment-id').value.trim();
 
     if (!name || !u || !p || !paymentId) {
-      alert('لطفاً تمامی فیلدها شامل نام، شناسه کاربری، رمز عبور و شناسه نسیم را تکمیل کنید.');
+      alert('لطفاً تمامی فیلدها را تکمیل کنید.');
       return;
     }
 
@@ -365,7 +351,7 @@
       document.getElementById('new-password').value = '';
       document.getElementById('new-amount').value = '';
       document.getElementById('new-payment-id').value = '';
-      alert('کاربر و مشخصات شناسه نسیم با موفقیت ثبت گردید.');
+      alert('کاربر جدید با موفقیت ثبت شد.');
       loadAdminTable();
     }
   }
@@ -429,6 +415,9 @@
     document.getElementById('view-user').classList.add('hidden');
     document.getElementById('view-admin').classList.add('hidden');
   }
+
+  // اجرای بررسی اولیه هنگام باز شدن صفحه
+  checkReturnFromGateway();
 </script>
 
 </body>
